@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Purge – Discord message cleaner
 // @namespace    local.purge
-// @version      1.0.2
+// @version      1.1.0
 // @description  Delete your own Discord messages by date range (calendar), keywords, or a vulgar-word list, with rate-limit-safe pacing.
 // @match        https://discord.com/*
 // @run-at       document-idle
@@ -22,36 +22,83 @@
     normal: { del: [1200, 2400], search: [1800, 3000], breakEvery: 30, breakMs: [8000, 15000] },
     fast:   { del: [800, 1500],  search: [1500, 2500], breakEvery: 40, breakMs: [5000, 9000] },
   };
-  const DEFAULT_VULGAR = [
-    // profanity + shorthands
-    'fuck', 'fucking', 'fucked', 'fucker', 'fck', 'fk', 'fuk', 'fuq', 'fcuk', 'motherfucker', 'mf', 'mfer',
-    'shit', 'shitty', 'sht', 'bullshit', 'dogshit', 'bitch', 'btch', 'biatch', 'bitches', 'asshole', 'ass', 'azz',
-    'arse', 'bastard', 'dick', 'dik', 'dickhead', 'cock', 'pussy', 'cunt', 'twat', 'prick', 'slut', 'whore',
-    'hoe', 'thot', 'skank', 'damn', 'piss', 'pissed', 'crap', 'wtf', 'stfu', 'gtfo', 'ffs',
-    // insults
-    'stupid', 'dumb', 'dumbass', 'idiot', 'moron', 'imbecile', 'loser', 'trash', 'garbage', 'worthless',
-    'pathetic', 'useless', 'ugly', 'fugly', 'fat', 'fatty', 'fatass', 'obese', 'pig', 'slow', 'dirty',
-    'disgusting', 'freak', 'weirdo', 'creep', 'psycho', 'clown', 'bozo', 'scum', 'lowlife', 'braindead',
-    'brain dead', 'chopped', 'incel', 'neckbeard', 'virgin', 'pos',
-    // ableist
-    'retard', 'retarded', 'retards', 'tard', 'sped', 'spastic', 'mongoloid', 'cripple', 'autistic', 'downie',
-    // slurs + shorthands
-    'nigger', 'nigga', 'nigg', 'ngga', 'nga', 'ng', 'neeka', 'neega', 'nigra', 'niqqa', 'negro', 'coon', 'darkie',
-    'spic', 'wetback', 'beaner', 'chink', 'gook', 'jap', 'nip', 'zipperhead', 'paki', 'towelhead', 'raghead',
-    'sand nigger', 'camel jockey', 'kike', 'yid', 'heeb', 'wop', 'wog', 'dago', 'cracker', 'honky', 'gringo',
-    'faggot', 'fag', 'dyke', 'homo', 'tranny', 'shemale', 'lesbo', 'queer',
-    // identity words used as attacks (high false-positive, trim if needed)
-    'black', 'indian', 'muslim', 'jew', 'arab', 'hindu', 'asian', 'mexican', 'terrorist', 'monkey',
-    // violence / self-harm / threats
-    'die', 'dies', 'dead', 'kill', 'kill yourself', 'kys', 'kms', 'kill myself', 'hang yourself', 'unalive',
-    'jump', 'rope', 'bomb', 'bombing', 'shoot', 'stab', 'murder', 'rape', 'raped', 'rapist', 'molest',
-    'pedo', 'pedophile', 'groomer', 'loli',
-    // sexual
-    'sex', 'sexy', 'hentai', 'porn', 'porno', 'xxx', 'nude', 'nudes', 'naked', 'blowjob', 'bj', 'handjob',
-    'cum', 'cumming', 'jizz', 'orgasm', 'horny', 'boobs', 'tits', 'titties', 'nipples', 'anal', 'dildo',
-    'vagina', 'penis', 'milf', 'onlyfans', 'fap', 'fapping', 'masturbate', 'jerk off', 'erotic', 'rule34',
-    'r34', 'bdsm', 'fetish', 'gooner', 'goon',
-  ];
+  // Word lists are tiered. Strong = profanity, slurs, direct insults, threats.
+  // Medium adds rude phrases, annoyance words, sexual terms. Everything adds common everyday words (high false-positive).
+  const TIERS = {
+    strong: [
+      "fuck", "fucking", "fucked", "fucker", "fck", "fk", "fuk", "fuq", "fcuk", "fuckface", "fuckboy",
+      "fuckwit", "dumbfuck", "dumbshit", "motherfucker", "motherfucking", "mf", "mfer", "mothafucka", "shit",
+      "shitty", "sht", "shithead", "shitass", "dipshit", "bullshit", "dogshit", "bitch", "btch", "biatch",
+      "bitches", "bitchy", "bitchass", "asshole", "ass", "azz", "arse", "arsehole", "asshat", "asswipe",
+      "assclown", "jackass", "bastard", "dick", "dik", "dickhead", "dickwad", "dickweed", "cock", "cocksucker",
+      "pussy", "cunt", "twat", "prick", "wanker", "douche", "douchebag", "stfu", "gtfo", "stupid", "dumb",
+      "dumbass", "idiot", "moron", "imbecile", "retard", "retarded", "retards", "tard", "sped", "spastic",
+      "spaz", "mongoloid", "ugly", "uglier", "ugliest", "fugly", "uggo", "hideous", "fat", "fatty", "fatass",
+      "fatso", "loser", "trash", "worthless", "pathetic", "useless", "scum", "scumbag", "freak", "psycho",
+      "slut", "slutty", "whore", "hoe", "thot", "skank", "disgusting", "nigger", "nigga", "nigg", "niggah",
+      "nibba", "nibber", "negger", "ngga", "nga", "ng", "neeka", "neega", "nigra", "niqqa", "negro", "coon",
+      "darkie", "spic", "wetback", "beaner", "chink", "chinaman", "slanty", "gook", "jap", "nip", "zipperhead",
+      "paki", "dothead", "towelhead", "raghead", "jihadi", "kike", "yid", "heeb", "jewboy", "wop", "wog",
+      "dago", "honky", "whitey", "faggot", "fag", "dyke", "homo", "tranny", "troon", "shemale", "lesbo", "kys",
+      "kms", "unalive", "rape", "raped", "rapist", "molest", "pedo", "pedophile", "groomer", "loli", "lolicon",
+      "shota", "ass hat", "cock sucker", "son of a bitch", "sonofabitch", "shut up", "shut the fuck up",
+      "fuck off", "piss off", "f off", "go to hell", "burn in hell", "rot in hell", "kiss my ass", "eat shit",
+      "hate you", "you suck", "kill yourself", "kill myself", "hang yourself", "off yourself", "end yourself",
+      "neck yourself", "drink bleach", "hope you die", "hope you choke", "go die", "go jump", "jump off",
+      "get cancer", "n word", "nword", "sand nigger", "sand monkey", "sandmonkey", "camel jockey",
+      "ching chong", "white trash", "drop dead",
+    ],
+    medium: [
+      "bullcrap", "wank", "tosser", "bellend", "knobhead", "bollocks", "bugger", "turd", "damn", "goddamn",
+      "goddamnit", "dammit", "damnit", "piss", "pissed", "pissant", "crap", "wtf", "ffs", "stupidity",
+      "dumber", "dumbest", "idiotic", "moronic", "brainless", "braindead", "brain dead", "no brain", "halfwit",
+      "dimwit", "nitwit", "numbskull", "dunce", "buffoon", "foolish", "clueless", "ignorant", "uneducated",
+      "illiterate", "gullible", "airhead", "bozo", "clown", "numpty", "muppet", "butterface", "repulsive",
+      "revolting", "obese", "chubby", "tubby", "blob", "hippo", "pig", "cow", "lard", "shorty", "anorexic",
+      "bony", "pimple", "pimples", "acne", "zit", "buck teeth", "four eyes", "gremlin", "hag", "chopped",
+      "gross", "trashy", "garbage", "pitiful", "failure", "reject", "irrelevant", "insignificant",
+      "forgettable", "unwanted", "unlovable", "dirtbag", "sleazebag", "lowlife", "parasite", "leech",
+      "cockroach", "vermin", "maggot", "waste of space", "waste of air", "weirdo", "creep", "pervert", "perv",
+      "degenerate", "deviant", "sicko", "psychotic", "unhinged", "deranged", "lunatic", "maniac", "nutjob",
+      "bonkers", "delusional", "jerk", "jackal", "evil", "abusive", "abuser", "manipulator", "gaslight",
+      "gaslighting", "liar", "fraud", "phony", "scammer", "scam", "thief", "snitch", "backstabber", "traitor",
+      "hypocrite", "spoiled", "brat", "bratty", "arrogant", "conceited", "narcissist", "narcissistic",
+      "obnoxious", "insufferable", "unbearable", "whiny", "whining", "clingy", "needy", "desperate",
+      "melodramatic", "overreacting", "tacky", "tasteless", "ratchet", "ghetto", "wack", "laughable",
+      "embarrassing", "embarrassment", "disgrace", "incel", "neckbeard", "virgin", "simp", "cuck", "cuckold",
+      "soyboy", "femoid", "foid", "feminazi", "bimbo", "irritating", "irritated", "irritation", "annoying",
+      "annoyed", "aggravating", "exhausting", "tiresome", "pestering", "bothersome", "infuriating",
+      "maddening", "triggered", "shut it", "shut your mouth", "i hate", "nobody cares", "no one cares",
+      "nobody asked", "no one asked", "who asked", "don't care", "idgaf", "get a life", "get a job",
+      "get help", "seek help", "needs therapy", "see a therapist", "touch grass", "go outside", "log off",
+      "grow up", "act your age", "learn to read", "read a book", "cry about it", "crybaby", "cry baby",
+      "boo hoo", "deal with it", "get over it", "stay mad", "seethe", "blow me", "screw you", "bite me",
+      "cancer", "aids", "cripple", "autistic", "downie", "midget", "schizo", "lobotomy", "shylock", "guido",
+      "cracker", "redneck", "hillbilly", "gringo", "gypsy", "pikey", "slag", "tramp", "harlot", "murder",
+      "sexting", "hentai", "ecchi", "doujin", "yaoi", "yuri", "futanari", "tentacle", "ahegao", "porn",
+      "porno", "pornhub", "xvideos", "xxx", "nsfw", "lewd", "nude", "nudes", "send nudes", "blowjob",
+      "handjob", "rimjob", "cumming", "jizz", "orgasm", "horny", "boner", "erection", "boobs", "tits",
+      "titties", "tiddies", "titty", "nipples", "cleavage", "twerk", "butthole", "dildo", "vagina", "penis",
+      "testicles", "milf", "onlyfans", "fap", "fapping", "masturbate", "jerk off", "erotic", "rule34", "r34",
+      "bdsm", "gooner", "goon", "orgy", "threesome", "incest", "bestiality", "suck my dick", "eat my pussy",
+    ],
+    everything: [
+      "sob", "fool", "dense", "slow", "whale", "bald", "balding", "tiny", "skinny", "greasy", "smelly",
+      "stink", "stinky", "hairy", "troll", "goblin", "toad", "dirty", "nasty", "foul", "vile", "worm", "pest",
+      "waste", "weird", "creepy", "crazy", "insane", "obsessed", "stalker", "toxic", "fake", "rat", "snake",
+      "pos", "selfish", "childish", "immature", "petty", "entitled", "dramatic", "jealous", "bitter", "mad",
+      "tryhard", "wannabe", "basic", "lame", "boring", "cringe", "cringey", "cringy", "corny", "karen",
+      "sensitive", "go away", "get lost", "leave me alone", "didnt ask", "didn't ask", "dont care", "idc",
+      "cope", "ratio", "sucks", "sucker", "queer", "gay", "black", "white", "african", "muslim", "jew",
+      "jewish", "arab", "hindu", "asian", "mexican", "terrorist", "monkey", "die", "dies", "dying", "dead",
+      "death", "kill", "killer", "jump", "rope", "choke", "drown", "bomb", "bombing", "shoot", "stab",
+      "beat you", "punch", "slap", "sex", "sexy", "naked", "bj", "cum", "booty", "anal", "anus", "balls",
+      "kink", "fetish", "stripper", "hooker", "prostitute", "escort", "pimp",
+    ],
+  };
+  const tierWords = (t) => t === 'strong' ? TIERS.strong
+    : t === 'medium' ? [...TIERS.strong, ...TIERS.medium]
+    : [...TIERS.strong, ...TIERS.medium, ...TIERS.everything];
 
   /* ------------------------------------------------------------------ *
    *  Helpers
@@ -140,10 +187,10 @@
     const clean = [...new Set(words.map((w) => w.trim().toLowerCase()).filter(Boolean))];
     if (!clean.length) return null;
     const body = clean.map(esc).join('|');
-    const re = new RegExp(opts.wholeWord ? `(?<![\\p{L}\\p{N}_])(?:${body})(?![\\p{L}\\p{N}_])` : body, 'iu');
+    const re = new RegExp(opts.wholeWord ? `(?<![\\p{L}\\p{N}_])(?:${body})(?:s|es|d|ed|ing|er|ers|y|ass)?(?![\\p{L}\\p{N}_])` : body, 'iu');
     // also test a "de-leeted" copy so f*ck, sh1t, n1gga-style swaps are caught
-    const LEET = { '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '@': 'a', '$': 's', '*': '' };
-    const deLeet = (t) => t.replace(/\S+/g, (w) => (/[a-z]/i.test(w) ? w.replace(/[013457@$*]/g, (c) => LEET[c]) : w));
+    const LEET = { '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '9': 'g', '@': 'a', '$': 's', '*': '' };
+    const deLeet = (t) => t.replace(/\S+/g, (w) => (/[a-z]/i.test(w) ? w.replace(/[0134579@$*]/g, (c) => LEET[c]) : w));
     return (msg) => {
       const c = msg.content || '';
       return re.test(c) || re.test(deLeet(c));
@@ -307,6 +354,11 @@
         <div class="pg-row"><input type="checkbox" id="pg-usekw"><label for="pg-usekw">Only messages containing my keywords</label></div>
         <textarea id="pg-kw" placeholder="comma separated: word1, word2, phrase here"></textarea>
         <div class="pg-row"><input type="checkbox" id="pg-usevulgar"><label for="pg-usevulgar">Only messages with vulgar words (list below)</label></div>
+        <select id="pg-tier">
+          <option value="strong">Strength: Strong (profanity, slurs, direct insults, threats)</option>
+          <option value="medium">Strength: Medium (+ rude phrases, annoyance, sexual terms)</option>
+          <option value="everything">Strength: Everything (+ everyday words like weird, black, white, die)</option>
+        </select>
         <textarea id="pg-vulgar"></textarea>
         <div class="pg-row"><input type="checkbox" id="pg-whole" checked><label for="pg-whole">Match whole words only</label></div>
         <div class="pg-row"><input type="checkbox" id="pg-pinned" checked><label for="pg-pinned">Keep pinned messages</label></div>
@@ -330,7 +382,9 @@
     $ = (id) => document.getElementById(id);
     logEl = $('pg-log');
     progEl = $('pg-prog');
-    $('pg-vulgar').value = DEFAULT_VULGAR.join(', ');
+    const fillVulgar = () => { $('pg-vulgar').value = tierWords($('pg-tier').value).join(', '); };
+    $('pg-tier').onchange = fillVulgar;
+    fillVulgar();
 
     const toggle = () => {
       const p = $('pg-panel');

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Purge – Discord message cleaner
 // @namespace    local.purge
-// @version      1.0.1
+// @version      1.0.2
 // @description  Delete your own Discord messages by date range (calendar), keywords, or a vulgar-word list, with rate-limit-safe pacing.
 // @match        https://discord.com/*
 // @run-at       document-idle
@@ -23,8 +23,34 @@
     fast:   { del: [800, 1500],  search: [1500, 2500], breakEvery: 40, breakMs: [5000, 9000] },
   };
   const DEFAULT_VULGAR = [
-    'fuck', 'fucking', 'shit', 'bitch', 'asshole', 'bastard', 'dick', 'cock',
-    'pussy', 'cunt', 'slut', 'whore', 'damn', 'piss', 'wtf', 'stfu',
+    // profanity + shorthands
+    'fuck', 'fucking', 'fucked', 'fucker', 'fck', 'fk', 'fuk', 'fuq', 'fcuk', 'motherfucker', 'mf', 'mfer',
+    'shit', 'shitty', 'sht', 'bullshit', 'dogshit', 'bitch', 'btch', 'biatch', 'bitches', 'asshole', 'ass', 'azz',
+    'arse', 'bastard', 'dick', 'dik', 'dickhead', 'cock', 'pussy', 'cunt', 'twat', 'prick', 'slut', 'whore',
+    'hoe', 'thot', 'skank', 'damn', 'piss', 'pissed', 'crap', 'wtf', 'stfu', 'gtfo', 'ffs',
+    // insults
+    'stupid', 'dumb', 'dumbass', 'idiot', 'moron', 'imbecile', 'loser', 'trash', 'garbage', 'worthless',
+    'pathetic', 'useless', 'ugly', 'fugly', 'fat', 'fatty', 'fatass', 'obese', 'pig', 'slow', 'dirty',
+    'disgusting', 'freak', 'weirdo', 'creep', 'psycho', 'clown', 'bozo', 'scum', 'lowlife', 'braindead',
+    'brain dead', 'chopped', 'incel', 'neckbeard', 'virgin', 'pos',
+    // ableist
+    'retard', 'retarded', 'retards', 'tard', 'sped', 'spastic', 'mongoloid', 'cripple', 'autistic', 'downie',
+    // slurs + shorthands
+    'nigger', 'nigga', 'nigg', 'ngga', 'nga', 'ng', 'neeka', 'neega', 'nigra', 'niqqa', 'negro', 'coon', 'darkie',
+    'spic', 'wetback', 'beaner', 'chink', 'gook', 'jap', 'nip', 'zipperhead', 'paki', 'towelhead', 'raghead',
+    'sand nigger', 'camel jockey', 'kike', 'yid', 'heeb', 'wop', 'wog', 'dago', 'cracker', 'honky', 'gringo',
+    'faggot', 'fag', 'dyke', 'homo', 'tranny', 'shemale', 'lesbo', 'queer',
+    // identity words used as attacks (high false-positive, trim if needed)
+    'black', 'indian', 'muslim', 'jew', 'arab', 'hindu', 'asian', 'mexican', 'terrorist', 'monkey',
+    // violence / self-harm / threats
+    'die', 'dies', 'dead', 'kill', 'kill yourself', 'kys', 'kms', 'kill myself', 'hang yourself', 'unalive',
+    'jump', 'rope', 'bomb', 'bombing', 'shoot', 'stab', 'murder', 'rape', 'raped', 'rapist', 'molest',
+    'pedo', 'pedophile', 'groomer', 'loli',
+    // sexual
+    'sex', 'sexy', 'hentai', 'porn', 'porno', 'xxx', 'nude', 'nudes', 'naked', 'blowjob', 'bj', 'handjob',
+    'cum', 'cumming', 'jizz', 'orgasm', 'horny', 'boobs', 'tits', 'titties', 'nipples', 'anal', 'dildo',
+    'vagina', 'penis', 'milf', 'onlyfans', 'fap', 'fapping', 'masturbate', 'jerk off', 'erotic', 'rule34',
+    'r34', 'bdsm', 'fetish', 'gooner', 'goon',
   ];
 
   /* ------------------------------------------------------------------ *
@@ -115,7 +141,13 @@
     if (!clean.length) return null;
     const body = clean.map(esc).join('|');
     const re = new RegExp(opts.wholeWord ? `(?<![\\p{L}\\p{N}_])(?:${body})(?![\\p{L}\\p{N}_])` : body, 'iu');
-    return (msg) => re.test(msg.content || '');
+    // also test a "de-leeted" copy so f*ck, sh1t, n1gga-style swaps are caught
+    const LEET = { '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '@': 'a', '$': 's', '*': '' };
+    const deLeet = (t) => t.replace(/\S+/g, (w) => (/[a-z]/i.test(w) ? w.replace(/[013457@$*]/g, (c) => LEET[c]) : w));
+    return (msg) => {
+      const c = msg.content || '';
+      return re.test(c) || re.test(deLeet(c));
+    };
   }
 
   async function run(opts) {

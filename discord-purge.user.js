@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Purge – Discord message cleaner
 // @namespace    local.purge
-// @version      1.0.0
+// @version      1.0.1
 // @description  Delete your own Discord messages by date range (calendar), keywords, or a vulgar-word list, with rate-limit-safe pacing.
 // @match        https://discord.com/*
 // @run-at       document-idle
@@ -41,33 +41,32 @@
   function getToken() {
     if (state.token) return state.token;
     let token = null;
-    // Method 1 (what Undiscord does): Discord hides localStorage, an iframe gets it back
+    // Method 1: read the token from Discord's own already-logged-in session (no storage tricks)
     try {
-      window.dispatchEvent(new Event('beforeunload'));
-      const ifr = document.body.appendChild(document.createElement('iframe'));
-      const raw = ifr.contentWindow.localStorage.token;
-      ifr.remove();
-      if (raw) token = JSON.parse(raw);
+      let found = null;
+      window.webpackChunkdiscord_app.push([[Symbol()], {}, (req) => {
+        for (const m of Object.values(req.c || {})) {
+          try {
+            const ex = m.exports;
+            for (const c of [ex?.default, ex?.Z, ex]) {
+              if (c && typeof c.getToken === 'function') {
+                const t = c.getToken();
+                if (typeof t === 'string') found = t;
+              }
+            }
+          } catch (_) {}
+        }
+      }]);
+      window.webpackChunkdiscord_app.pop();
+      token = found;
     } catch (_) {}
-    // Method 2: pull it out of Discord's webpack modules
+    // Method 2 (fallback only): iframe localStorage. No beforeunload event, which can sign you out.
     if (!token) {
       try {
-        let found = null;
-        window.webpackChunkdiscord_app.push([[Symbol()], {}, (req) => {
-          for (const m of Object.values(req.c || {})) {
-            try {
-              const ex = m.exports;
-              for (const c of [ex?.default, ex?.Z, ex]) {
-                if (c && typeof c.getToken === 'function') {
-                  const t = c.getToken();
-                  if (typeof t === 'string') found = t;
-                }
-              }
-            } catch (_) {}
-          }
-        }]);
-        window.webpackChunkdiscord_app.pop();
-        token = found;
+        const ifr = document.body.appendChild(document.createElement('iframe'));
+        const raw = ifr.contentWindow.localStorage.token;
+        ifr.remove();
+        if (raw) token = JSON.parse(raw);
       } catch (_) {}
     }
     state.token = token;
